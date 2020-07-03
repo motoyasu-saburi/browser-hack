@@ -1,11 +1,15 @@
 # BigInt and Object type confusion vulnerability exploitable via XSLTProcessor setParameter method
 
-XSLTProcessor の SetParameter Methodを介して、悪用可能なBig Int および、Objectタイプの混乱 (type confusion)の脆弱性
-
 https://bugzilla.mozilla.org/show_bug.cgi?id=1603055
+
+XSLTProcessor の SetParameter Methodを介して、悪用可能なBig Int および、Objectタイプの混乱 (type confusion)の脆弱性
+（正直）よくわかっていない。
+
+
 
 
 以下、PoCの poc.html を読み込むと、クラッシュが発生する。
+これを悪用することで、（曰く）RCEなどに繋がる可能性があるとのこと。
 
 ```html
 <!DOCTYPE html>
