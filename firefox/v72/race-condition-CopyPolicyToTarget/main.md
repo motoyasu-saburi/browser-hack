@@ -19,9 +19,8 @@ Google Chrome is not affected because the renderer processes runs with a USER_LO
 Google Chromeの場合は、 renderer processes が USER_LOCKDOWN トークン（ `初期統合性レベル = LOW` で `Delayed Integrity Level = UNTRUSTED` )で実行されている。
 そのため、他のレンダラープロセスへのアクセスができないため、影響を受けない。
 
----------- 以下まだ読んでない
+Race Condition の脆弱性は、新しいプロセスのブートストラップ中に発生し、新しいタブプロセスが作成されると、ブローカーは次のように実行する
 
-競合状態の脆弱性は、新しいプロセスのブートストラップ中に発生し、新しいタブプロセスが作成されると、ブローカーは次のように実行します。
 1. CreateProcess はロックダウントークン(Firefox レンダラの場合は USER_LIMITED)でSUSPENDED、TargetProcess::CreateではILが低いため、TargetProcess::Createを実行します。
 2. JOBオブジェクトに対象プロセスを割り当てる
 3. ターゲットスレッドのトークンを初期化用の初期トークン(USER_RESTRICTED_SAME_ACCESS)に変更する。
